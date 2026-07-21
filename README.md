@@ -24,12 +24,26 @@ l'enrichissement est **purement additif**.
 
 | Fichier | Taille | Usage |
 |---|---|---|
-| `dist/quartiers-marseille.parquet` | ~740 Ko | **GeoParquet** 1.0.0, WKB, zstd — analyse, DuckDB, Python |
+| `dist/quartiers-marseille.parquet` | ~750 Ko | **GeoParquet** 1.0.0, WKB, zstd — analyse, DuckDB, Python |
 | `dist/quartiers-marseille.gpkg` | ~1,1 Mo | GeoPackage — QGIS, ArcGIS |
 | `dist/quartiers-marseille.geojson` | ~2,5 Mo | GeoJSON — web, échange |
+| `dist/quartiers-marseille-shp.zip` | ~650 Ko | Shapefile zippé — SIG hérités |
+| `dist/shapefile/` | ~1 Mo | Les mêmes, décompressés |
 | `dist/quartiers-marseille.csv` | ~6 Ko | Table de relecture, sans géométrie |
 
 Coordonnées en **EPSG:4326** (WGS 84).
+
+Deux particularités du **shapefile**, inhérentes au format et sans perte
+d'information :
+
+- l'encodage est déclaré en UTF-8 par un fichier `.cpg`, sans quoi « Les Îles »
+  et « Opéra » ressortent illisibles ;
+- les entités d'un seul tenant y sont des `Polygon` là où les autres formats
+  portent des `MultiPolygon` — le format ne distingue pas les deux. Géométries
+  topologiquement identiques, mêmes sommets, mêmes aires.
+
+Les noms de champs tiennent tous dans les 10 caractères du format : ils sont
+identiques d'un format à l'autre, sans troncature.
 
 ```python
 import geopandas
@@ -124,11 +138,12 @@ Les données dérivent de sources publiques sous la même licence ou compatibles
 
 ## Reproductibilité
 
-À sources inchangées, le CSV, le GeoJSON et le GeoParquet sont reproductibles
-**bit à bit**. Le GeoPackage ne l'est pas : SQLite y inscrit des identifiants
+À sources inchangées, tous les fichiers sont reproductibles **bit à bit** —
+CSV, GeoJSON, GeoParquet, shapefile et son archive, dont l'horodatage est figé
+pour cette raison — **sauf le GeoPackage**. SQLite y inscrit des identifiants
 propres à chaque écriture, si bien que le fichier change à chaque exécution alors
-que son contenu — attributs et géométries — reste rigoureusement identique. Un
-diff sur ce seul fichier n'indique donc pas un changement de donnée.
+que son contenu, attributs et géométries, reste rigoureusement identique. Un diff
+sur ce seul fichier n'indique donc pas un changement de donnée.
 
 ## Corrections de libellé
 

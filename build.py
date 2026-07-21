@@ -2,7 +2,7 @@
 # requires-python = ">=3.10"
 # dependencies = ["geopandas>=1.0", "pyarrow>=15"]
 # ///
-"""Enrichit le jeu « Quartiers de Marseille » et l'exporte en quatre formats.
+"""Enrichit le jeu « Quartiers de Marseille » et l'exporte en cinq formats.
 
     uv run build.py                 # génère dist/ (télécharge ses sources)
     uv run build.py --verifier      # + revalide le préfixe cadastral géométriquement
@@ -95,6 +95,7 @@ import re
 import sys
 import unicodedata
 import urllib.request
+import zipfile
 from pathlib import Path
 
 RACINE = Path(__file__).parent
@@ -329,6 +330,40 @@ def verifier_prefixes(geojson: dict) -> int:
 # --------------------------------------------------------------------------
 # Exports
 # --------------------------------------------------------------------------
+def exporter_shapefile(couche, base) -> None:
+    """Shapefile UTF-8, livré en dossier ET en archive zip.
+
+    Le format impose des contraintes que les autres n'ont pas :
+      - noms de champs limités à 10 caractères. Les sept colonnes tiennent
+        (`code_qua` est la plus longue, 8) : aucune troncature, donc des noms
+        identiques d'un format à l'autre. Une colonne plus longue ajoutée un
+        jour serait silencieusement tronquée — d'où le contrôle ci-dessous.
+      - encodage à déclarer : sans fichier .cpg en UTF-8, « Les Îles » et
+        « Opéra » ressortent illisibles chez le réutilisateur.
+    """
+    trop_longues = [c for c in couche.columns if c != "geometry" and len(c) > 10]
+    if trop_longues:
+        raise SystemExit(
+            f"Colonnes trop longues pour le format shapefile (max 10 car.) : {trop_longues}. "
+            "Elles seraient tronquées en silence — renommer avant d'exporter."
+        )
+
+    dossier = DIST / "shapefile"
+    dossier.mkdir(exist_ok=True)
+    chemin = dossier / "quartiers-marseille.shp"
+    couche.to_file(chemin, driver="ESRI Shapefile", encoding="utf-8")
+
+    # Archive : un shapefile ne se transmet qu'accompagné de ses fichiers
+    # satellites, d'où le zip — c'est la forme attendue sur data.gouv.fr.
+    # Horodatage figé pour que l'archive ne change pas d'une exécution à l'autre.
+    with zipfile.ZipFile(f"{base}-shp.zip", "w", zipfile.ZIP_DEFLATED) as archive:
+        for fichier in sorted(dossier.iterdir()):
+            info = zipfile.ZipInfo(fichier.name, date_time=(1980, 1, 1, 0, 0, 0))
+            info.compress_type = zipfile.ZIP_DEFLATED
+            info.external_attr = 0o644 << 16
+            archive.writestr(info, fichier.read_bytes())
+
+
 def exporter(geojson: dict, table: list[dict]) -> None:
     import geopandas
 
@@ -342,6 +377,7 @@ def exporter(geojson: dict, table: list[dict]) -> None:
 
     couche.to_file(f"{base}.geojson", driver="GeoJSON")
     couche.to_file(f"{base}.gpkg", layer="quartiers", driver="GPKG")
+    exporter_shapefile(couche, base)
     # GeoParquet : géométrie en WKB + métadonnées « geo » conformes à la spec,
     # écrites par geopandas. Compression zstd, nettement plus efficace que snappy
     # sur des polygones.
@@ -357,8 +393,10 @@ def exporter(geojson: dict, table: list[dict]) -> None:
         redacteur.writeheader()
         redacteur.writerows(table)
 
-    for chemin in sorted(DIST.iterdir()):
-        print(f"  {chemin.name:<34} {chemin.stat().st_size / 1024:>8.0f} Ko")
+    for chemin in sorted(DIST.rglob("*")):
+        if chemin.is_file():
+            nom = chemin.relative_to(DIST)
+            print(f"  {str(nom):<34} {chemin.stat().st_size / 1024:>8.0f} Ko")
 
 
 def main() -> int:
