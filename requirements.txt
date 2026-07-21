@@ -1,0 +1,4 @@
+# Dépendances de build.py, pour qui n'utilise pas uv (avec uv, elles sont
+# déclarées en tête du script — PEP 723 — et installées automatiquement).
+geopandas>=1.0
+pyarrow>=15
