@@ -39,25 +39,44 @@ section peut exister sous plusieurs préfixes, si bien qu'une référence comme
 « 13201 0A 0070 » désigne cinq parcelles différentes, une par quartier.
 
 ---------------------------------------------------------------------------
+LA GÉOMÉTRIE VIENT DES IRIS, AGRÉGÉS
+
+C'est la méthode d'origine du jeu, en R : les quartiers de Marseille sont
+exactement les GRANDS QUARTIERS de l'INSEE, et le code d'un grand quartier est
+le préfixe à 7 caractères du code IRIS. Agréger les IRIS par ce préfixe
+reconstruit donc les quartiers — géométrie ET code.
+
+    393 IRIS  →  group by code_iris[:7]  →  111 quartiers
+
+L'intérêt est que `code_qua` n'est plus déduit d'une position dans un fichier :
+il est PORTÉ PAR LA DONNÉE. La géométrie suit par ailleurs le millésime courant
+des contours IRIS de l'IGN, au lieu d'être figée sur un export de 2021.
+
+---------------------------------------------------------------------------
 D'OÙ VIENT LE PRÉFIXE — ET COMMENT IL A ÉTÉ VÉRIFIÉ
 
-Il n'est écrit nulle part dans le jeu source : il se déduit de l'ORDRE des
-entités, `préfixe = 800 + rang`. Fonder une donnée publiée sur un ordre de
-fichier serait imprudent sans contrôle, d'où deux vérifications indépendantes.
+Le préfixe cadastral, lui, n'est écrit dans aucune source : il se déduit du rang
+du quartier, `préfixe = 800 + rang des code_qua triés`. La déduction porte
+désormais sur la numérotation officielle de l'INSEE, stable et lisible dans la
+donnée, et non plus sur l'ordre des lignes d'un fichier. Trois vérifications :
 
-1. RECOUVREMENT GÉOMÉTRIQUE (--verifier) — chaque polygone de quartier est
-   confronté à la couche `prefixes_sections` de l'export Etalab du cadastre :
-   111 / 111 rattachements confirmés, recouvrement médian 0,99.
+1. RECOUVREMENT GÉOMÉTRIQUE (--verifier) — chaque quartier est confronté à la
+   couche `prefixes_sections` de l'export Etalab du cadastre : 111 / 111
+   rattachements confirmés, recouvrement médian 0,99.
 
    Le minimum, 0,08, est le préfixe 831 (les îles) : il pointe bien vers le même
    quartier, mais le préfixe *cadastral* déborde le *quartier*. Ses trois parts
    couvrent le Frioul, l'archipel de Riou et l'île de Planier, alors que Riou
    relève des Goudes et que seul le Frioul constitue un quartier.
 
-2. ORDRE ALPHABÉTIQUE — l'ordre est alphabétique dans 15 arrondissements sur
-   16. L'exception est le 9ᵉ, où Sormiou (852) précède Sainte-Marguerite (853),
-   tous deux confirmés géométriquement (0,95 et 0,99). L'ordre du fichier suit
-   donc la numérotation cadastrale réelle, et non un tri alphabétique.
+2. CONCORDANCE AVEC LE JEU DE 2021 — les quartiers reconstruits ont été
+   rattachés par recouvrement aux entités de l'édition d'origine, appariement
+   bijectif dont libelles-origine.csv garde la trace. Le script s'arrête si un
+   code_qua n'y trouve pas son libellé.
+
+3. ORDRE ALPHABÉTIQUE — l'ordre est alphabétique dans 15 arrondissements sur
+   16 ; l'exception, le 9ᵉ, est confirmée géométriquement. La numérotation
+   INSEE suit donc l'ordre cadastral, et non un tri alphabétique.
 
 Une fois `prefixe` publié, cette déduction n'a plus lieu d'être : les
 réutilisateurs lisent la colonne.
@@ -102,11 +121,18 @@ RACINE = Path(__file__).parent
 CACHE = RACINE / ".cache"
 DIST = RACINE / "dist"
 
-# Ressource GeoJSON publiée sur data.gouv.fr (jeu « Quartiers de Marseille »).
-SOURCE = ("https://static.data.gouv.fr/resources/quartiers-de-marseille-1/"
-          "20210308-145904/quartiers-marseille.geojson")
 WIKIPEDIA = ("https://fr.wikipedia.org/w/api.php?action=parse"
              "&page=Quartiers%20de%20Marseille&prop=wikitext&format=json&formatversion=2")
+# IRIS de l'IGN (Géoplateforme), interrogés commune par commune : le fichier
+# national pèse plusieurs centaines de Mo, le WFS filtré quelques dizaines de Ko.
+# Champs utiles : code_iris (9 car.) et code_insee.
+#
+# On prend IRIS-GE, la version GRANDE ÉCHELLE, et non `contours_iris`, qui est
+# généralisé : à découpage identique, celui-ci ne porte qu'un quart des sommets
+# et ferait perdre en précision par rapport au jeu déjà diffusé.
+IRIS = ("https://data.geopf.fr/wfs/ows?SERVICE=WFS&VERSION=2.0.0&REQUEST=GetFeature"
+        "&TYPENAMES=STATISTICALUNITS.IRISGE:iris_ge&OUTPUTFORMAT=application/json"
+        "&CQL_FILTER=code_insee%3D%27{commune}%27")
 # Couche des préfixes de section de l'export Etalab du cadastre, par commune.
 CADASTRE = ("https://cadastre.data.gouv.fr/data/etalab-cadastre/latest/geojson/communes/13/"
             "{commune}/cadastre-{commune}-prefixes_sections.json.gz")
@@ -211,26 +237,78 @@ def correction_applicable(prefixe: str, nom_source: str, nom_officiel: str | Non
 
 
 # --------------------------------------------------------------------------
+# Reconstruction des quartiers à partir des IRIS
+# --------------------------------------------------------------------------
+def agreger_iris():
+    """Reconstruit les 111 quartiers en agrégeant les IRIS de Marseille.
+
+    Un quartier de Marseille est un GRAND QUARTIER au sens de l'INSEE, dont le
+    code est le préfixe à 7 caractères du code IRIS : agréger les IRIS par ce
+    préfixe redonne les quartiers, géométrie et code compris.
+    """
+    import geopandas
+    import pandas
+
+    couches = []
+    for commune in ARRONDISSEMENTS:
+        brut = json.loads(telecharger(IRIS.format(commune=commune), f"iris-{commune}.json"))
+        couches.append(geopandas.GeoDataFrame.from_features(brut["features"], crs="EPSG:4326"))
+    iris = pandas.concat(couches, ignore_index=True)
+
+    iris["code_qua"] = iris["code_iris"].str[:7]
+    # dissolve = union des géométries par quartier. Les IRIS étant jointifs,
+    # l'union redonne un contour propre.
+    quartiers = iris.dissolve(by="code_qua", as_index=False)[["code_qua", "geometry"]]
+    quartiers = quartiers.sort_values("code_qua", ignore_index=True)
+
+    if len(quartiers) != NB_QUARTIERS:
+        raise SystemExit(
+            f"{len(iris)} IRIS agrégés en {len(quartiers)} quartiers au lieu de {NB_QUARTIERS} : "
+            "le découpage IRIS a changé, revérifier avant de publier."
+        )
+    quartiers["DEPCO"] = quartiers["code_qua"].str[:5]
+    quartiers["num_qua"] = quartiers["code_qua"].str[5:].astype(int)
+    # Le préfixe cadastral suit le rang du quartier dans la numérotation INSEE.
+    quartiers["prefixe"] = [str(PREFIXE_INITIAL + i) for i in range(len(quartiers))]
+    print(f"  {len(iris)} IRIS → {len(quartiers)} quartiers")
+    return quartiers
+
+
+def rattacher_libelles_origine(quartiers):
+    """Reporte les libellés d'origine du jeu (NOM_QUA, NOM_CO), par code_qua.
+
+    Ces libellés sont FIGÉS dans libelles-origine.csv plutôt que relus depuis
+    data.gouv.fr, pour deux raisons : ce sont des données historiques, qui ne
+    bougeront plus ; et la ressource diffuse désormais la sortie de ce script,
+    si bien que la relire reviendrait à se citer soi-même. Le fichier a été
+    produit une fois, par appariement géométrique avec l'édition de 2021.
+    """
+    import pandas
+
+    libelles = pandas.read_csv(RACINE / "libelles-origine.csv", dtype=str).set_index("code_qua")
+    manquants = set(quartiers["code_qua"]) - set(libelles.index)
+    if manquants:
+        raise SystemExit(
+            f"Aucun libellé d'origine pour {sorted(manquants)} : le découpage IRIS a "
+            "changé, il faut reprendre libelles-origine.csv avant de publier."
+        )
+    quartiers = quartiers.copy()
+    quartiers["NOM_QUA"] = [libelles.loc[c, "NOM_QUA"] for c in quartiers["code_qua"]]
+    quartiers["NOM_CO"] = [libelles.loc[c, "NOM_CO"] for c in quartiers["code_qua"]]
+    return quartiers
+
+
+# --------------------------------------------------------------------------
 # Enrichissement
 # --------------------------------------------------------------------------
-def enrichir(geojson: dict, officiels: dict[str, list[str]]) -> list[dict]:
-    """Ajoute les 4 propriétés en place et renvoie la table de relecture."""
-    entites = geojson["features"]
-    if len(entites) != NB_QUARTIERS:
-        raise SystemExit(
-            f"Le jeu source compte {len(entites)} entités au lieu de {NB_QUARTIERS} : "
-            "la correspondance rang → préfixe n'est plus fiable, revérifier d'abord."
-        )
-
-    table, rang_dans_arrondissement = [], {}
-    for rang, entite in enumerate(entites):
-        proprietes = entite["properties"]
-        arrondissement = proprietes["DEPCO"]
-        numero = rang_dans_arrondissement[arrondissement] = (
-            rang_dans_arrondissement.get(arrondissement, 0) + 1
-        )
-        prefixe = str(PREFIXE_INITIAL + rang)
-        nom_source = proprietes["NOM_QUA"]
+def enrichir(quartiers, officiels: dict[str, list[str]]) -> list[dict]:
+    """Attribue le nom officiel à chaque quartier et renvoie la table de relecture."""
+    table = []
+    for ligne in quartiers.itertuples():
+        arrondissement = ligne.DEPCO
+        numero = ligne.num_qua
+        prefixe = ligne.prefixe
+        nom_source = ligne.NOM_QUA
 
         liste = officiels.get(arrondissement, [])
         nom_officiel = liste[numero - 1] if numero <= len(liste) else None
@@ -241,15 +319,9 @@ def enrichir(geojson: dict, officiels: dict[str, list[str]]) -> list[dict]:
         # source : une divergence inconnue est un signal, pas une correction.
         nom = nom_officiel if (concordant or corrige) else nom_source.title()
 
-        proprietes.update({
-            "prefixe": prefixe,
-            "num_qua": numero,
-            "code_qua": f"{arrondissement}{numero:02d}",
-            "nom": nom,
-        })
         table.append({
             "prefixe": prefixe,
-            "code_qua": f"{arrondissement}{numero:02d}",
+            "code_qua": ligne.code_qua,
             "arrondissement": arrondissement,
             "num_qua": numero,
             "nom": nom,
@@ -282,13 +354,13 @@ def geometrie_sure(geometrie: dict):
     return shape(geometrie).buffer(0)
 
 
-def verifier_prefixes(geojson: dict) -> int:
+def verifier_prefixes(couche, table: list[dict]) -> int:
     """Confronte chaque préfixe déduit au cadastre. Renvoie le nombre d'écarts."""
     from shapely.strtree import STRtree
 
     print("\n▸ Vérification géométrique contre l'export cadastre Etalab")
-    quartiers = [geometrie_sure(e["geometry"]) for e in geojson["features"]]
-    proprietes = [e["properties"] for e in geojson["features"]]
+    quartiers = list(couche.geometry)
+    proprietes = table
     index = STRtree(quartiers)
 
     recouvrements, ecarts = [], []
@@ -307,7 +379,7 @@ def verifier_prefixes(geojson: dict) -> int:
             part = aire / polygone.area if polygone.area else 0.0
             attendu = next(
                 (i for i, p in enumerate(proprietes)
-                 if p["prefixe"] == prefixe and p["DEPCO"] == commune), None
+                 if p["prefixe"] == prefixe and p["arrondissement"] == commune), None
             )
             if meilleur is None or meilleur != attendu:
                 ecarts.append((commune, prefixe, part,
@@ -364,13 +436,11 @@ def exporter_shapefile(couche, base) -> None:
             archive.writestr(info, fichier.read_bytes())
 
 
-def exporter(geojson: dict, table: list[dict]) -> None:
-    import geopandas
-
+def exporter(couche, table: list[dict]) -> None:
     DIST.mkdir(exist_ok=True)
     base = DIST / "quartiers-marseille"
 
-    couche = geopandas.GeoDataFrame.from_features(geojson["features"], crs="EPSG:4326")
+    couche = couche.assign(nom=[ligne["nom"] for ligne in table])
     # Ordre de colonnes stable : identifiants, puis libellés, puis géométrie.
     colonnes = ["prefixe", "code_qua", "num_qua", "nom", "DEPCO", "NOM_CO", "NOM_QUA"]
     couche = couche[colonnes + ["geometry"]]
@@ -405,23 +475,21 @@ def main() -> int:
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     analyseur.add_argument(
-        "--source", metavar="CHEMIN",
-        help="GeoJSON source local (par défaut : la ressource publiée sur data.gouv.fr)",
-    )
-    analyseur.add_argument(
         "--verifier", action="store_true",
         help="revalide le préfixe cadastral contre l'export Etalab (télécharge ~16 fichiers)",
     )
     arguments = analyseur.parse_args()
 
-    print("▸ Sources")
-    brut = (Path(arguments.source).read_bytes() if arguments.source
-            else telecharger(SOURCE, "quartiers-marseille.geojson"))
-    geojson = json.loads(brut)
+    print("▸ Reconstruction des quartiers depuis les IRIS")
+    quartiers = agreger_iris()
+
+    print("\n▸ Libellés d'origine")
+    quartiers = rattacher_libelles_origine(quartiers)
+    print(f"  {len(quartiers)}/{NB_QUARTIERS} repris depuis libelles-origine.csv")
     officiels = noms_officiels()
 
-    print("\n▸ Enrichissement")
-    table = enrichir(geojson, officiels)
+    print("\n▸ Noms officiels")
+    table = enrichir(quartiers, officiels)
     corrections = [ligne for ligne in table if ligne["correction"]]
     alertes = [ligne for ligne in table if ligne["alerte"]]
     print(f"  {len(table)} quartiers · {len(table) - len(corrections)} noms appariés · "
@@ -433,10 +501,10 @@ def main() -> int:
         print(f"  ⚠ préfixe {ligne['prefixe']} ({ligne['code_qua']}) : « {ligne['nom_source']} » "
               f"diverge du nom officiel sans figurer dans CORRECTIONS — libellé source conservé.")
 
-    ecarts = verifier_prefixes(geojson) if arguments.verifier else 0
+    ecarts = verifier_prefixes(quartiers, table) if arguments.verifier else 0
 
     print("\n▸ Exports")
-    exporter(geojson, table)
+    exporter(quartiers, table)
     return 1 if ecarts else 0
 
 

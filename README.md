@@ -17,6 +17,9 @@ Diffusé sur data.gouv.fr : [Quartiers de Marseille](https://www.data.gouv.fr/da
 | `NOM_CO` | `"Marseille 1er Arrondissemen"` | Libellé d'arrondissement *(champ d'origine)* |
 | `NOM_QUA` | `"BELSUNCE"` | Libellé d'origine, en capitales *(champ d'origine)* |
 
+`code_qua` est le code du **grand quartier** INSEE, lu directement dans le code
+IRIS ; `num_qua` en est le rang au sein de l'arrondissement.
+
 Les champs d'origine et les géométries sont conservés tels quels :
 l'enrichissement est **purement additif**.
 
@@ -24,11 +27,11 @@ l'enrichissement est **purement additif**.
 
 | Fichier | Taille | Usage |
 |---|---|---|
-| `dist/quartiers-marseille.parquet` | ~750 Ko | **GeoParquet** 1.0.0, WKB, zstd — analyse, DuckDB, Python |
-| `dist/quartiers-marseille.gpkg` | ~1,1 Mo | GeoPackage — QGIS, ArcGIS |
-| `dist/quartiers-marseille.geojson` | ~2,5 Mo | GeoJSON — web, échange |
-| `dist/quartiers-marseille-shp.zip` | ~650 Ko | Shapefile zippé — SIG hérités |
-| `dist/shapefile/` | ~1 Mo | Les mêmes, décompressés |
+| `dist/quartiers-marseille.parquet` | ~960 Ko | **GeoParquet** 1.0.0, WKB, zstd — analyse, DuckDB, Python |
+| `dist/quartiers-marseille.gpkg` | ~1,4 Mo | GeoPackage — QGIS, ArcGIS |
+| `dist/quartiers-marseille.geojson` | ~2,1 Mo | GeoJSON — web, échange |
+| `dist/quartiers-marseille-shp.zip` | ~810 Ko | Shapefile zippé — SIG hérités |
+| `dist/shapefile/` | ~1,2 Mo | Les mêmes, décompressés |
 | `dist/quartiers-marseille.csv` | ~6 Ko | Table de relecture, sans géométrie |
 
 Coordonnées en **EPSG:4326** (WGS 84).
@@ -75,14 +78,35 @@ section existe sous plusieurs préfixes, si bien qu'une référence comme
 « 13201 0A 0070 » désigne **cinq parcelles distinctes**, une par quartier. C'est
 le préfixe, et lui seul, qui les départage.
 
+## D'où vient la géométrie
+
+Des **IRIS de l'INSEE, agrégés** — la méthode d'origine du jeu. Les quartiers de
+Marseille sont exactement les *grands quartiers* de l'INSEE, et le code d'un
+grand quartier est le préfixe à 7 caractères du code IRIS :
+
+```
+393 IRIS  →  regroupés par code_iris[:7]  →  111 quartiers
+```
+
+`code_qua` n'est donc pas déduit d'une position dans un fichier : il est **porté
+par la donnée**. La géométrie suit le millésime courant des IRIS de l'IGN plutôt
+que d'être figée sur un export de 2021.
+
+La source est **IRIS-GE**, la version grande échelle, et non `contours_iris`, qui
+est généralisé : à découpage identique, ce dernier ne porte qu'un quart des
+sommets. Le résultat est plus détaillé que le jeu publié jusqu'ici — 74 803
+sommets contre 59 644 — pour un découpage qui ne s'en écarte que de **0,20 %**
+en surface.
+
 ## Comment le préfixe a été établi
 
-Il n'est écrit nulle part dans le jeu d'origine : il se déduit de l'**ordre** des
-entités, `préfixe = 800 + rang`. Fonder une donnée publiée sur un ordre de
-fichier appelle une vérification, d'où deux contrôles indépendants.
+Le préfixe cadastral, lui, n'est écrit dans aucune source : il se déduit du rang
+du quartier, `préfixe = 800 + rang des code_qua triés`. La déduction porte donc
+sur la numérotation officielle de l'INSEE, lisible dans la donnée. Trois
+contrôles la confirment.
 
-**Recouvrement géométrique** — chaque polygone de quartier est confronté à la
-couche `prefixes_sections` de l'export Etalab du cadastre :
+**Recouvrement géométrique** — chaque quartier est confronté à la couche
+`prefixes_sections` de l'export Etalab du cadastre :
 
 - **111 / 111** rattachements confirmés ;
 - recouvrement **médian 0,99**.
@@ -91,9 +115,13 @@ Le minimum, 0,08, concerne le préfixe 831 (les îles) : il désigne bien le mê
 quartier, mais le préfixe *cadastral* déborde le *quartier* — il couvre aussi
 l'archipel de Riou et l'île de Planier, qui n'en font pas partie.
 
+**Concordance avec le jeu publié** — les quartiers reconstruits sont rattachés
+par recouvrement aux entités diffusées jusqu'ici, dont ils reprennent les
+libellés d'origine. L'appariement est bijectif : 111 / 111.
+
 **Ordre alphabétique** — vérifié dans 15 arrondissements sur 16. L'exception, le
-9ᵉ, est confirmée géométriquement : l'ordre du fichier suit la numérotation
-cadastrale réelle, pas un tri appliqué après coup.
+9ᵉ, est confirmée géométriquement : la numérotation INSEE suit l'ordre
+cadastral, pas un tri alphabétique.
 
 Reproduire : `uv run build.py --verifier`.
 
@@ -122,7 +150,8 @@ supprimer ce dossier force un rafraîchissement.
 
 | Source | Apport |
 |---|---|
-| [Quartiers de Marseille](https://www.data.gouv.fr/datasets/quartiers-de-marseille-1) | géométries et découpage |
+| [IRIS-GE (IGN, Géoplateforme)](https://geoservices.ign.fr/irisge) | géométries, agrégées en quartiers |
+| [Quartiers de Marseille (édition 2021)](https://www.data.gouv.fr/datasets/quartiers-de-marseille-1) | libellés d'origine, figés dans `libelles-origine.csv` |
 | [Export Etalab du cadastre](https://cadastre.data.gouv.fr/datasets/cadastre-etalab) | vérification des préfixes |
 | [Quartiers de Marseille (Wikipédia)](https://fr.wikipedia.org/wiki/Quartiers_de_Marseille) | noms en graphie officielle |
 
