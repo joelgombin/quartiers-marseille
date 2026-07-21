@@ -112,6 +112,24 @@ supprimer ce dossier force un rafraîchissement.
 | [Export Etalab du cadastre](https://cadastre.data.gouv.fr/datasets/cadastre-etalab) | vérification des préfixes |
 | [Quartiers de Marseille (Wikipédia)](https://fr.wikipedia.org/wiki/Quartiers_de_Marseille) | noms en graphie officielle |
 
+## Licence
+
+**[Licence Ouverte 2.0](https://www.etalab.gouv.fr/licence-ouverte-open-licence)**
+(Etalab) — réutilisation libre, y compris commerciale, sous réserve de mentionner
+la paternité et la date de dernière mise à jour. Texte intégral :
+[`LICENSE.md`](LICENSE.md).
+
+Les données dérivent de sources publiques sous la même licence ou compatibles
+(cf. *Sources*).
+
+## Reproductibilité
+
+À sources inchangées, le CSV, le GeoJSON et le GeoParquet sont reproductibles
+**bit à bit**. Le GeoPackage ne l'est pas : SQLite y inscrit des identifiants
+propres à chaque écriture, si bien que le fichier change à chaque exécution alors
+que son contenu — attributs et géométries — reste rigoureusement identique. Un
+diff sur ce seul fichier n'indique donc pas un changement de donnée.
+
 ## Corrections de libellé
 
 Cinq quartiers portaient dans le jeu d'origine un libellé qui s'écartait de la

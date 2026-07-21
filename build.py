@@ -79,9 +79,10 @@ divergence qui n'y figure pas — parce qu'une des sources aurait changé — es
 signalée sans être appliquée : le libellé source est alors conservé. Voir
 ANOMALIES.md.
 
-L'appariement se fait sur le RANG dans l'arrondissement, pas sur le code publié
-par Wikipédia : celui-ci porte une coquille (Sainte-Marthe codée 13 214 06,
-déjà attribué à Saint-Joseph).
+L'appariement se fait sur le RANG dans l'arrondissement, et non sur le code
+publié par Wikipédia. Ce choix a été dicté par une coquille (Sainte-Marthe
+codée 13 214 06, déjà attribué à Saint-Joseph), depuis corrigée en amont ; il
+est conservé parce qu'il ne dépend pas de l'exactitude d'un champ éditable.
 """
 
 from __future__ import annotations
@@ -127,7 +128,7 @@ LIGNE_WIKI = re.compile(
 # L'API Wikimedia rejette (403) le User-Agent par défaut d'urllib : sa politique
 # impose un agent descriptif, identifiant l'outil et un moyen de contact.
 AGENT = ("quartiers-marseille-build/1.0 "
-         "(https://github.com/datactivist/quartiers-marseille)")
+         "(https://github.com/joelgombin/quartiers-marseille)")
 
 
 def telecharger(url: str, nom_cache: str) -> bytes:

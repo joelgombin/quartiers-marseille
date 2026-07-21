@@ -64,12 +64,15 @@ validation (0,08 au lieu de 0,99 en médiane).
 Les deux formes circulent : ce n'est pas une coquille mais un choix éditorial,
 tranché ici en faveur de la forme officielle. `NOM_QUA` conserve « LES BORELS ».
 
-## 4. Une coquille côté Wikipédia (sans incidence sur ce jeu)
+## 4. Une coquille côté Wikipédia — corrigée
 
 Dans le tableau de [Quartiers de Marseille](https://fr.wikipedia.org/wiki/Quartiers_de_Marseille),
-**Sainte-Marthe porte le code `13 214 06`**, déjà attribué à Saint-Joseph : elle
-devrait être `13 214 07`. C'est la raison pour laquelle `build.py` apparie les
-noms sur le **rang** dans l'arrondissement et non sur le code affiché.
+Sainte-Marthe portait le code `13 214 06`, déjà attribué à Saint-Joseph, au lieu
+de `13 214 07`. **Corrigé en amont le 21 juillet 2026.**
+
+C'est ce qui a conduit `build.py` à apparier les noms sur le **rang** dans
+l'arrondissement plutôt que sur le code affiché. Le choix est conservé : il ne
+dépend pas de l'exactitude d'un champ éditable par n'importe qui.
 
 ## 5. Le 9ᵉ arrondissement n'est pas dans l'ordre alphabétique
 
