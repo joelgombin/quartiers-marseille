@@ -23,42 +23,44 @@ IRIS ; `num_qua` en est le rang au sein de l'arrondissement.
 Les champs d'origine et les géométries sont conservés tels quels :
 l'enrichissement est **purement additif**.
 
-## Formats
+## Télécharger
 
-| Fichier | Taille | Usage |
+Les données sont diffusées sur **[data.gouv.fr](https://www.data.gouv.fr/datasets/quartiers-de-marseille-1)**.
+Les liens ci-dessous sont stables — ils pointent toujours vers la dernière
+version, quel que soit son millésime.
+
+| Format | Lien | Usage |
 |---|---|---|
-| `dist/quartiers-marseille.parquet` | ~960 Ko | **GeoParquet** 1.0.0, WKB, zstd — analyse, DuckDB, Python |
-| `dist/quartiers-marseille.gpkg` | ~1,4 Mo | GeoPackage — QGIS, ArcGIS |
-| `dist/quartiers-marseille.geojson` | ~2,1 Mo | GeoJSON — web, échange |
-| `dist/quartiers-marseille-shp.zip` | ~810 Ko | Shapefile zippé — SIG hérités |
-| `dist/shapefile/` | ~1,2 Mo | Les mêmes, décompressés |
-| `dist/quartiers-marseille.csv` | ~6 Ko | Table de relecture, sans géométrie |
+| **GeoParquet** | [télécharger](https://www.data.gouv.fr/fr/datasets/r/786874c2-d61a-4099-9703-7bbda7ff20ed) | analyse, DuckDB, Python |
+| GeoPackage | [télécharger](https://www.data.gouv.fr/fr/datasets/r/1d4fbc3a-3dff-4633-a4e6-052064c38f4a) | QGIS, ArcGIS |
+| GeoJSON | [télécharger](https://www.data.gouv.fr/fr/datasets/r/8a8f7f54-7f91-482c-a78c-dd09d893d1b6) | web, échange |
+| Shapefile (zip) | [télécharger](https://www.data.gouv.fr/fr/datasets/r/a7104f3c-e487-4af3-82ad-6197cedfaeb1) | SIG hérités |
 
-Coordonnées en **EPSG:4326** (WGS 84).
-
-Deux particularités du **shapefile**, inhérentes au format et sans perte
-d'information :
-
-- l'encodage est déclaré en UTF-8 par un fichier `.cpg`, sans quoi « Les Îles »
-  et « Opéra » ressortent illisibles ;
-- les entités d'un seul tenant y sont des `Polygon` là où les autres formats
-  portent des `MultiPolygon` — le format ne distingue pas les deux. Géométries
-  topologiquement identiques, mêmes sommets, mêmes aires.
-
-Les noms de champs tiennent tous dans les 10 caractères du format : ils sont
-identiques d'un format à l'autre, sans troncature.
+Coordonnées en **EPSG:4326** (WGS 84). Ce dépôt versionne le **code** ; les
+fichiers de données vivent sur data.gouv.fr. `uv run build.py` les régénère
+localement dans `dist/`.
 
 ```python
 import geopandas
-quartiers = geopandas.read_parquet("dist/quartiers-marseille.parquet")
+url = "https://www.data.gouv.fr/fr/datasets/r/786874c2-d61a-4099-9703-7bbda7ff20ed"
+quartiers = geopandas.read_parquet(url)
 quartiers.loc[quartiers["prefixe"] == "801", "nom"]   # → Belsunce
 ```
 
 ```sql
--- DuckDB, sans téléchargement préalable
-INSTALL spatial; LOAD spatial;
-SELECT prefixe, nom FROM 'dist/quartiers-marseille.parquet' WHERE DEPCO = '13201';
+-- DuckDB, en lisant directement le fichier distant
+INSTALL spatial; LOAD spatial; INSTALL httpfs; LOAD httpfs;
+SELECT prefixe, nom
+FROM 'https://www.data.gouv.fr/fr/datasets/r/786874c2-d61a-4099-9703-7bbda7ff20ed'
+WHERE DEPCO = '13201';
 ```
+
+Le **shapefile** a deux particularités inhérentes au format, sans perte
+d'information : l'encodage est déclaré en UTF-8 par un fichier `.cpg` (sans quoi
+« Les Îles » et « Opéra » ressortent illisibles), et les entités d'un seul tenant
+y sont des `Polygon` là où les autres formats portent des `MultiPolygon` — le
+format ne distingue pas les deux. Les noms de champs tiennent tous dans la limite
+de 10 caractères, donc identiques d'un format à l'autre, sans troncature.
 
 ## À quoi sert le préfixe cadastral
 
@@ -127,11 +129,14 @@ Reproduire : `uv run build.py --verifier`.
 
 ## Régénérer
 
-Le script est autoportant : il télécharge ses sources et déclare ses
-dépendances ([PEP 723](https://peps.python.org/pep-0723/)).
+Ce dépôt versionne le code — `build.py` et `libelles-origine.csv` — mais pas les
+données : les fichiers de `dist/` sont régénérables et diffusés sur data.gouv.fr.
+
+Le script est autoportant : il télécharge ses sources (IRIS-GE, cadastre,
+Wikipédia) et déclare ses dépendances ([PEP 723](https://peps.python.org/pep-0723/)).
 
 ```sh
-uv run build.py               # génère dist/
+uv run build.py               # (re)génère dist/
 uv run build.py --verifier    # + revalide le préfixe contre le cadastre
 uv run build.py --help
 ```
@@ -143,6 +148,8 @@ pip install -r requirements.txt
 python build.py
 ```
 
+Le script produit aussi `dist/quartiers-marseille.csv`, une table de relecture
+sans géométrie (colonnes `correction` et `alerte` — cf. [`ANOMALIES.md`](ANOMALIES.md)).
 Les sources téléchargées sont mises en cache dans `.cache/` (non versionné) ;
 supprimer ce dossier force un rafraîchissement.
 
@@ -167,12 +174,12 @@ Les données dérivent de sources publiques sous la même licence ou compatibles
 
 ## Reproductibilité
 
-À sources inchangées, tous les fichiers sont reproductibles **bit à bit** —
-CSV, GeoJSON, GeoParquet, shapefile et son archive, dont l'horodatage est figé
-pour cette raison — **sauf le GeoPackage**. SQLite y inscrit des identifiants
-propres à chaque écriture, si bien que le fichier change à chaque exécution alors
-que son contenu, attributs et géométries, reste rigoureusement identique. Un diff
-sur ce seul fichier n'indique donc pas un changement de donnée.
+À sources inchangées, la régénération est reproductible **bit à bit** — CSV,
+GeoJSON, GeoParquet, shapefile et son archive, dont l'horodatage est figé pour
+cette raison — **sauf le GeoPackage**. SQLite y inscrit des identifiants propres
+à chaque écriture, si bien que le fichier change à chaque exécution alors que son
+contenu, attributs et géométries, reste rigoureusement identique. Deux builds ne
+diffèrent donc que par ce fichier, sans changement de donnée.
 
 ## Corrections de libellé
 

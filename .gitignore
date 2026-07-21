@@ -5,3 +5,6 @@
 
 # Sources téléchargées par build.py (regénérables)
 .cache/
+
+# Sorties régénérables — publiées sur data.gouv.fr, pas versionnées
+dist/
