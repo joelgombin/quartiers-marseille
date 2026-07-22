@@ -10,18 +10,15 @@ Diffusé sur data.gouv.fr : [Quartiers de Marseille](https://www.data.gouv.fr/da
 | Champ | Exemple | Description |
 |---|---|---|
 | `prefixe` | `"801"` | **Préfixe de section cadastral** (DGFiP) |
-| `code_qua` | `"1320101"` | Code officiel du quartier : arrondissement + rang |
+| `code_qua` | `"1320101"` | Code officiel du grand quartier (INSEE) |
 | `num_qua` | `1` | Rang du quartier dans son arrondissement |
-| `nom` | `"Belsunce"` | Nom officiel, accentué, en casse de titre |
+| `nom` | `"Belsunce"` | Nom officiel, en graphie accentuée |
 | `DEPCO` | `"13201"` | Code INSEE de l'arrondissement |
-| `NOM_CO` | `"Marseille 1er Arrondissemen"` | Libellé d'arrondissement *(champ d'origine)* |
-| `NOM_QUA` | `"BELSUNCE"` | Libellé d'origine, en capitales *(champ d'origine)* |
+| `NOM_CO` | `"Marseille 1er Arrondissement"` | Libellé de l'arrondissement |
 
-`code_qua` est le code du **grand quartier** INSEE, lu directement dans le code
-IRIS ; `num_qua` en est le rang au sein de l'arrondissement.
-
-Les champs d'origine et les géométries sont conservés tels quels :
-l'enrichissement est **purement additif**.
+`code_qua`, `DEPCO`, `num_qua` et `NOM_CO` viennent directement du code IRIS et
+de ses métadonnées ; `nom` du tableau officiel des quartiers ; `prefixe` est
+déduit et vérifié contre le cadastre (voir plus bas).
 
 ## Télécharger
 
@@ -90,22 +87,29 @@ grand quartier est le préfixe à 7 caractères du code IRIS :
 393 IRIS  →  regroupés par code_iris[:7]  →  111 quartiers
 ```
 
-`code_qua` n'est donc pas déduit d'une position dans un fichier : il est **porté
-par la donnée**. La géométrie suit le millésime courant des IRIS de l'IGN plutôt
-que d'être figée sur un export de 2021.
+`code_qua`, et avec lui `DEPCO`, `num_qua` et le nom de l'arrondissement, ne sont
+donc pas déduits d'une position dans un fichier : ils sont **portés par la
+donnée**. La géométrie suit le millésime courant des IRIS de l'IGN.
 
 La source est **IRIS-GE**, la version grande échelle, et non `contours_iris`, qui
 est généralisé : à découpage identique, ce dernier ne porte qu'un quart des
-sommets. Le résultat est plus détaillé que le jeu publié jusqu'ici — 74 803
-sommets contre 59 644 — pour un découpage qui ne s'en écarte que de **0,20 %**
-en surface.
+sommets.
+
+## D'où vient le nom
+
+Du [tableau des quartiers sur Wikipédia](https://fr.wikipedia.org/wiki/Quartiers_de_Marseille),
+qui donne pour chaque quartier son code officiel et son nom en graphie accentuée.
+Le nom est joint au quartier **par le code** (`code_qua`) — jointure exacte, sans
+appariement approximatif de libellés. On exige qu'elle soit bijective (111 codes
+IRIS ↔ 111 codes Wikipédia) : un code en double ou manquant arrête le script
+plutôt que de nommer un quartier au hasard.
 
 ## Comment le préfixe a été établi
 
 Le préfixe cadastral, lui, n'est écrit dans aucune source : il se déduit du rang
 du quartier, `préfixe = 800 + rang des code_qua triés`. La déduction porte donc
-sur la numérotation officielle de l'INSEE, lisible dans la donnée. Trois
-contrôles la confirment.
+sur la numérotation officielle de l'INSEE, lisible dans la donnée. Deux contrôles
+la confirment.
 
 **Recouvrement géométrique** — chaque quartier est confronté à la couche
 `prefixes_sections` de l'export Etalab du cadastre :
@@ -117,10 +121,6 @@ Le minimum, 0,08, concerne le préfixe 831 (les îles) : il désigne bien le mê
 quartier, mais le préfixe *cadastral* déborde le *quartier* — il couvre aussi
 l'archipel de Riou et l'île de Planier, qui n'en font pas partie.
 
-**Concordance avec le jeu publié** — les quartiers reconstruits sont rattachés
-par recouvrement aux entités diffusées jusqu'ici, dont ils reprennent les
-libellés d'origine. L'appariement est bijectif : 111 / 111.
-
 **Ordre alphabétique** — vérifié dans 15 arrondissements sur 16. L'exception, le
 9ᵉ, est confirmée géométriquement : la numérotation INSEE suit l'ordre
 cadastral, pas un tri alphabétique.
@@ -129,11 +129,12 @@ Reproduire : `uv run build.py --verifier`.
 
 ## Régénérer
 
-Ce dépôt versionne le code — `build.py` et `libelles-origine.csv` — mais pas les
-données : les fichiers de `dist/` sont régénérables et diffusés sur data.gouv.fr.
+Ce dépôt versionne le **code** (`build.py`), pas les données : les fichiers de
+`dist/` sont entièrement régénérables et diffusés sur data.gouv.fr.
 
-Le script est autoportant : il télécharge ses sources (IRIS-GE, cadastre,
-Wikipédia) et déclare ses dépendances ([PEP 723](https://peps.python.org/pep-0723/)).
+Le script est autoportant : il reconstruit tout depuis trois sources vivantes —
+IRIS-GE, Wikipédia, cadastre — et déclare ses dépendances
+([PEP 723](https://peps.python.org/pep-0723/)).
 
 ```sh
 uv run build.py               # (re)génère dist/
@@ -149,18 +150,16 @@ python build.py
 ```
 
 Le script produit aussi `dist/quartiers-marseille.csv`, une table de relecture
-sans géométrie (colonnes `correction` et `alerte` — cf. [`ANOMALIES.md`](ANOMALIES.md)).
-Les sources téléchargées sont mises en cache dans `.cache/` (non versionné) ;
-supprimer ce dossier force un rafraîchissement.
+sans géométrie. Les sources téléchargées sont mises en cache dans `.cache/` (non
+versionné) ; supprimer ce dossier force un rafraîchissement.
 
 ## Sources
 
 | Source | Apport |
 |---|---|
-| [IRIS-GE (IGN, Géoplateforme)](https://geoservices.ign.fr/irisge) | géométries, agrégées en quartiers |
-| [Quartiers de Marseille (édition 2021)](https://www.data.gouv.fr/datasets/quartiers-de-marseille-1) | libellés d'origine, figés dans `libelles-origine.csv` |
+| [IRIS-GE (IGN, Géoplateforme)](https://geoservices.ign.fr/irisge) | géométrie, `code_qua`, `DEPCO`, `NOM_CO` |
+| [Quartiers de Marseille (Wikipédia)](https://fr.wikipedia.org/wiki/Quartiers_de_Marseille) | noms officiels, joints par code |
 | [Export Etalab du cadastre](https://cadastre.data.gouv.fr/datasets/cadastre-etalab) | vérification des préfixes |
-| [Quartiers de Marseille (Wikipédia)](https://fr.wikipedia.org/wiki/Quartiers_de_Marseille) | noms en graphie officielle |
 
 ## Licence
 
@@ -181,20 +180,8 @@ cette raison — **sauf le GeoPackage**. SQLite y inscrit des identifiants propr
 contenu, attributs et géométries, reste rigoureusement identique. Deux builds ne
 diffèrent donc que par ce fichier, sans changement de donnée.
 
-## Corrections de libellé
+## Notes
 
-Cinq quartiers portaient dans le jeu d'origine un libellé qui s'écartait de la
-graphie officielle — trois coquilles, une variante d'usage, et une entité mal
-étiquetée (le rang 31, nommé `ENDOUME`, désigne en réalité le quartier des
-**Îles**). Le champ `nom` suit la graphie officielle ; `NOM_QUA` conserve le
-libellé d'origine.
-
-| Préfixe | `NOM_QUA` | `nom` |
-|---|---|---|
-| 813 | `SAINT MAURON` | Saint-Mauront |
-| 814 | `LA VILETTE` | La Villette |
-| 831 | `ENDOUME` | Les Îles |
-| 845 | `VIELLE CHAPELLE` | Vieille Chapelle |
-| 898 | `LES BORELS` | Borel |
-
-Le détail et les justifications sont dans [`ANOMALIES.md`](ANOMALIES.md).
+Quelques points de méthode et de vigilance — préfixe 831 qui déborde le quartier
+des Îles, dépendance à l'exactitude des codes Wikipédia, ordre du 9ᵉ — sont
+consignés dans [`NOTES.md`](NOTES.md).

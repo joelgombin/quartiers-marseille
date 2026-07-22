@@ -2,7 +2,7 @@
 # requires-python = ">=3.10"
 # dependencies = ["geopandas>=1.0", "pyarrow>=15"]
 # ///
-"""Enrichit le jeu « Quartiers de Marseille » et l'exporte en cinq formats.
+"""Construit le jeu « Quartiers de Marseille » et l'exporte en cinq formats.
 
     uv run build.py                 # génère dist/ (télécharge ses sources)
     uv run build.py --verifier      # + revalide le préfixe cadastral géométriquement
@@ -11,20 +11,22 @@
 Sans uv :  pip install -r requirements.txt && python build.py
 
 ---------------------------------------------------------------------------
-CE QUE LE SCRIPT AJOUTE
+CE QUE LE SCRIPT PRODUIT
 
-Le jeu source décrit les 111 quartiers de Marseille (découpage du décret
-46-2285 du 18 octobre 1946) mais ne porte aucun identifiant : ni le code
-officiel du quartier, ni le préfixe de section cadastral. On les ajoute, ainsi
-que le nom en graphie officielle.
+Les 111 quartiers de Marseille (découpage du décret 46-2285 du 18 octobre 1946),
+avec leur géométrie, leurs identifiants officiels et leur préfixe de section
+cadastral :
 
-    prefixe    "801"        préfixe de section cadastral (DGFiP)
-    code_qua   "1320101"    code officiel du quartier : arrondissement + rang
-    num_qua    1            rang du quartier dans son arrondissement
-    nom        "Belsunce"   nom officiel, accentué, en casse de titre
+    prefixe    "801"                         préfixe de section cadastral (DGFiP)
+    code_qua   "1320101"                      code officiel du grand quartier INSEE
+    num_qua    1                              rang du quartier dans l'arrondissement
+    nom        "Belsunce"                     nom officiel, en graphie accentuée
+    DEPCO      "13201"                         code INSEE de l'arrondissement
+    NOM_CO     "Marseille 1er Arrondissement"  libellé de l'arrondissement
 
-Les champs d'origine (DEPCO, NOM_CO, NOM_QUA) et les géométries sont conservés
-tels quels : l'enrichissement est purement additif.
+Tout est reconstruit depuis des sources vivantes et faisant autorité — IRIS-GE
+de l'IGN, tableau de Wikipédia, cadastre Etalab. Aucune dépendance à une édition
+figée du jeu.
 
 ---------------------------------------------------------------------------
 POURQUOI LE PRÉFIXE CADASTRAL COMPTE
@@ -44,21 +46,22 @@ LA GÉOMÉTRIE VIENT DES IRIS, AGRÉGÉS
 C'est la méthode d'origine du jeu, en R : les quartiers de Marseille sont
 exactement les GRANDS QUARTIERS de l'INSEE, et le code d'un grand quartier est
 le préfixe à 7 caractères du code IRIS. Agréger les IRIS par ce préfixe
-reconstruit donc les quartiers — géométrie ET code.
+reconstruit les quartiers — géométrie ET code.
 
     393 IRIS  →  group by code_iris[:7]  →  111 quartiers
 
-L'intérêt est que `code_qua` n'est plus déduit d'une position dans un fichier :
-il est PORTÉ PAR LA DONNÉE. La géométrie suit par ailleurs le millésime courant
-des contours IRIS de l'IGN, au lieu d'être figée sur un export de 2021.
+`code_qua`, `DEPCO`, `num_qua` et `NOM_CO` sont donc PORTÉS PAR LA DONNÉE, pas
+déduits d'une position dans un fichier. La géométrie suit le millésime courant
+des IRIS de l'IGN. Source : IRIS-GE, la version GRANDE ÉCHELLE — `contours_iris`,
+généralisé, ne porte qu'un quart des sommets à découpage identique.
 
 ---------------------------------------------------------------------------
-D'OÙ VIENT LE PRÉFIXE — ET COMMENT IL A ÉTÉ VÉRIFIÉ
+D'OÙ VIENT LE PRÉFIXE — ET COMMENT IL EST VÉRIFIÉ
 
 Le préfixe cadastral, lui, n'est écrit dans aucune source : il se déduit du rang
-du quartier, `préfixe = 800 + rang des code_qua triés`. La déduction porte
-désormais sur la numérotation officielle de l'INSEE, stable et lisible dans la
-donnée, et non plus sur l'ordre des lignes d'un fichier. Trois vérifications :
+du quartier, `préfixe = 800 + rang des code_qua triés`. La déduction porte sur la
+numérotation officielle de l'INSEE, stable et lisible dans la donnée. Deux
+contrôles la confirment.
 
 1. RECOUVREMENT GÉOMÉTRIQUE (--verifier) — chaque quartier est confronté à la
    couche `prefixes_sections` de l'export Etalab du cadastre : 111 / 111
@@ -69,14 +72,9 @@ donnée, et non plus sur l'ordre des lignes d'un fichier. Trois vérifications :
    couvrent le Frioul, l'archipel de Riou et l'île de Planier, alors que Riou
    relève des Goudes et que seul le Frioul constitue un quartier.
 
-2. CONCORDANCE AVEC LE JEU DE 2021 — les quartiers reconstruits ont été
-   rattachés par recouvrement aux entités de l'édition d'origine, appariement
-   bijectif dont libelles-origine.csv garde la trace. Le script s'arrête si un
-   code_qua n'y trouve pas son libellé.
-
-3. ORDRE ALPHABÉTIQUE — l'ordre est alphabétique dans 15 arrondissements sur
-   16 ; l'exception, le 9ᵉ, est confirmée géométriquement. La numérotation
-   INSEE suit donc l'ordre cadastral, et non un tri alphabétique.
+2. ORDRE ALPHABÉTIQUE — l'ordre est alphabétique dans 15 arrondissements sur
+   16 ; l'exception, le 9ᵉ, est confirmée géométriquement. La numérotation INSEE
+   suit donc l'ordre cadastral, et non un tri alphabétique.
 
 Une fois `prefixe` publié, cette déduction n'a plus lieu d'être : les
 réutilisateurs lisent la colonne.
@@ -85,23 +83,12 @@ réutilisateurs lisent la colonne.
 D'OÙ VIENNENT LES NOMS
 
 Du wikitexte de fr.wikipedia.org/wiki/Quartiers_de_Marseille, PARSÉ et non
-recopié — une liste de 111 lignes transcrite à la main se dégrade.
-
-Un nom officiel est retenu s'il correspond au NOM_QUA du jeu source une fois
-accents, casse, traits d'union et articles neutralisés — un appariement ne peut
-donc pas glisser d'un quartier à l'autre, il ne fait que restituer la graphie.
-
-Restent cinq quartiers dont les deux libellés diffèrent vraiment (coquilles du
-jeu source, et une entité mal étiquetée). Ils sont corrigés, mais via la table
-CORRECTIONS, qui les énumère un à un avec les deux libellés attendus. Une
-divergence qui n'y figure pas — parce qu'une des sources aurait changé — est
-signalée sans être appliquée : le libellé source est alors conservé. Voir
-ANOMALIES.md.
-
-L'appariement se fait sur le RANG dans l'arrondissement, et non sur le code
-publié par Wikipédia. Ce choix a été dicté par une coquille (Sainte-Marthe
-codée 13 214 06, déjà attribué à Saint-Joseph), depuis corrigée en amont ; il
-est conservé parce qu'il ne dépend pas de l'exactitude d'un champ éditable.
+recopié — une liste de 111 lignes transcrite à la main se dégrade. Chaque nom
+est joint à son quartier par le CODE (`code_qua`), pas par un appariement de
+libellés ni par un rang : la jointure est donc exacte. On exige qu'elle soit
+bijective — 111 codes IRIS ↔ 111 codes Wikipédia — sinon le script s'arrête,
+ce qui détecte aussi bien un doublon dans le tableau qu'un changement de
+millésime IRIS.
 """
 
 from __future__ import annotations
@@ -112,7 +99,6 @@ import gzip
 import json
 import re
 import sys
-import unicodedata
 import urllib.request
 import zipfile
 from pathlib import Path
@@ -125,11 +111,10 @@ WIKIPEDIA = ("https://fr.wikipedia.org/w/api.php?action=parse"
              "&page=Quartiers%20de%20Marseille&prop=wikitext&format=json&formatversion=2")
 # IRIS de l'IGN (Géoplateforme), interrogés commune par commune : le fichier
 # national pèse plusieurs centaines de Mo, le WFS filtré quelques dizaines de Ko.
-# Champs utiles : code_iris (9 car.) et code_insee.
+# Champs utiles : code_iris (9 car.), code_insee, nom_commune.
 #
 # On prend IRIS-GE, la version GRANDE ÉCHELLE, et non `contours_iris`, qui est
-# généralisé : à découpage identique, celui-ci ne porte qu'un quart des sommets
-# et ferait perdre en précision par rapport au jeu déjà diffusé.
+# généralisé : à découpage identique, celui-ci ne porte qu'un quart des sommets.
 IRIS = ("https://data.geopf.fr/wfs/ows?SERVICE=WFS&VERSION=2.0.0&REQUEST=GetFeature"
         "&TYPENAMES=STATISTICALUNITS.IRISGE:iris_ge&OUTPUTFORMAT=application/json"
         "&CQL_FILTER=code_insee%3D%27{commune}%27")
@@ -141,10 +126,11 @@ ARRONDISSEMENTS = [f"132{n:02d}" for n in range(1, 17)]
 NB_QUARTIERS = 111
 PREFIXE_INITIAL = 801  # le rang 1 (Belsunce) porte le préfixe 801
 
-# Le tableau Wikipédia donne, par ligne, un code <code>13 2XX YY</code> puis une
-# cellule de nom, sous forme de lien [[Cible|Libellé]] ou [[Libellé]].
+# Le tableau Wikipédia donne, par ligne, un code <code>13 2XX YY</code> — dont on
+# capture l'arrondissement (2XX) ET le rang (YY) pour reformer le code à 7
+# chiffres — puis une cellule de nom (lien [[Cible|Libellé]] ou [[Libellé]]).
 LIGNE_WIKI = re.compile(
-    r"<code>13\s*(2\d{2})\s*\d{2}</code>.*?\n\|(?:data-sort-value=\"[^\"]*\"\|)?\s*(.+?)\n",
+    r"<code>13\s*(2\d{2})\s*(\d{2})</code>.*?\n\|(?:data-sort-value=\"[^\"]*\"\|)?\s*(.+?)\n",
     re.DOTALL,
 )
 
@@ -172,7 +158,7 @@ def telecharger(url: str, nom_cache: str) -> bytes:
 
 
 # --------------------------------------------------------------------------
-# Noms officiels
+# Noms officiels (Wikipédia), indexés par code de quartier
 # --------------------------------------------------------------------------
 def libelle_wiki(cellule: str) -> str:
     """Libellé affiché d'une cellule wikitexte ([[Cible|Libellé]] → Libellé)."""
@@ -183,57 +169,27 @@ def libelle_wiki(cellule: str) -> str:
     return re.sub(r"''+", "", texte).strip()
 
 
-def noms_officiels() -> dict[str, list[str]]:
-    """{code arrondissement: [noms dans l'ordre du tableau]}."""
+def noms_officiels() -> dict[str, str]:
+    """{code_qua: nom officiel}, depuis le tableau de Wikipédia.
+
+    La clé est le code à 7 chiffres du grand quartier, qui joint exactement le
+    `code_qua` reconstruit depuis les IRIS. Un code en double rendrait la
+    jointure ambiguë : on s'arrête plutôt que de choisir au hasard.
+    """
     brut = json.loads(telecharger(WIKIPEDIA, "wikipedia.json"))["parse"]["wikitext"]
-    par_arrondissement: dict[str, list[str]] = {}
-    for arrondissement, cellule in LIGNE_WIKI.findall(brut):
-        par_arrondissement.setdefault(f"13{arrondissement}", []).append(libelle_wiki(cellule))
-    return par_arrondissement
-
-
-def cle_comparaison(nom: str) -> str:
-    """Forme neutralisée : sans accents, sans ponctuation, sans article initial.
-
-    Sert UNIQUEMENT à vérifier que deux graphies désignent le même quartier
-    avant de substituer l'une à l'autre — jamais à apparier des quartiers entre
-    eux, ce qui se fait par le rang.
-    """
-    sans_accents = unicodedata.normalize("NFD", nom).encode("ascii", "ignore").decode()
-    normalise = re.sub(r"[^A-Za-z0-9 ]", " ", sans_accents).upper()
-    normalise = re.sub(r"\s+", " ", normalise).strip()
-    return re.sub(r"^(LES|LE|LA|L|DU|DE)\s+", "", normalise)
-
-
-# --------------------------------------------------------------------------
-# Corrections de libellé, examinées une à une
-# --------------------------------------------------------------------------
-# Cas où le libellé du jeu source et la graphie officielle désignent le même
-# quartier sans se ressembler assez pour être appariés automatiquement. Chacun a
-# été vérifié individuellement (cf. ANOMALIES.md) et est inscrit ici de façon
-# EXPLICITE : c'est ce qui permet d'appliquer la correction sans renoncer au
-# garde-fou. Toute divergence qui n'est PAS dans cette table — parce que le
-# tableau Wikipédia aurait été réordonné, par exemple — reste signalée et NON
-# appliquée, plutôt que de renommer un quartier en silence.
-#
-#   préfixe: (libellé source attendu, graphie officielle attendue)
-CORRECTIONS = {
-    "813": ("SAINT MAURON", "Saint-Mauront"),      # coquille : t final manquant
-    "814": ("LA VILETTE", "La Villette"),          # coquille : double l
-    "831": ("ENDOUME", "Les Îles"),                # 2e entité « ENDOUME » = quartier des Îles
-    "845": ("VIELLE CHAPELLE", "Vieille Chapelle"),  # coquille : Vielle → Vieille
-    "898": ("LES BORELS", "Borel"),                # variante d'usage, alignée sur l'officiel
-}
-
-
-def correction_applicable(prefixe: str, nom_source: str, nom_officiel: str | None) -> bool:
-    """Vrai si cette divergence précise a été examinée et validée.
-
-    On exige que les DEUX libellés soient ceux attendus : si l'une des sources
-    change, la correction ne s'applique plus et le cas repasse en alerte.
-    """
-    attendu = CORRECTIONS.get(prefixe)
-    return attendu is not None and attendu == (nom_source, nom_officiel)
+    noms: dict[str, str] = {}
+    doublons = []
+    for arrondissement, rang, cellule in LIGNE_WIKI.findall(brut):
+        code = f"13{arrondissement}{rang}"
+        if code in noms:
+            doublons.append(code)
+        noms[code] = libelle_wiki(cellule)
+    if doublons:
+        raise SystemExit(
+            f"Codes de quartier en double dans le tableau Wikipédia : {sorted(set(doublons))}. "
+            "La jointure par code serait ambiguë — corriger la source avant de publier."
+        )
+    return noms
 
 
 # --------------------------------------------------------------------------
@@ -266,70 +222,43 @@ def agreger_iris():
             f"{len(iris)} IRIS agrégés en {len(quartiers)} quartiers au lieu de {NB_QUARTIERS} : "
             "le découpage IRIS a changé, revérifier avant de publier."
         )
+    # nom_commune est constant pour tous les IRIS d'un même arrondissement.
+    nom_commune = dict(zip(iris["code_insee"], iris["nom_commune"]))
     quartiers["DEPCO"] = quartiers["code_qua"].str[:5]
     quartiers["num_qua"] = quartiers["code_qua"].str[5:].astype(int)
+    quartiers["NOM_CO"] = quartiers["DEPCO"].map(nom_commune)
     # Le préfixe cadastral suit le rang du quartier dans la numérotation INSEE.
     quartiers["prefixe"] = [str(PREFIXE_INITIAL + i) for i in range(len(quartiers))]
     print(f"  {len(iris)} IRIS → {len(quartiers)} quartiers")
     return quartiers
 
 
-def rattacher_libelles_origine(quartiers):
-    """Reporte les libellés d'origine du jeu (NOM_QUA, NOM_CO), par code_qua.
+# --------------------------------------------------------------------------
+# Jointure des noms
+# --------------------------------------------------------------------------
+def nommer(quartiers, noms: dict[str, str]) -> list[dict]:
+    """Joint le nom officiel à chaque quartier par son code, renvoie la table.
 
-    Ces libellés sont FIGÉS dans libelles-origine.csv plutôt que relus depuis
-    data.gouv.fr, pour deux raisons : ce sont des données historiques, qui ne
-    bougeront plus ; et la ressource diffuse désormais la sortie de ce script,
-    si bien que la relire reviendrait à se citer soi-même. Le fichier a été
-    produit une fois, par appariement géométrique avec l'édition de 2021.
+    Jointure EXACTE (code_qua ↔ code Wikipédia) : pas d'appariement approximatif.
+    On exige qu'elle soit totale, sinon on s'arrête — un code sans nom signale un
+    tableau Wikipédia incomplet ou un millésime IRIS différent.
     """
-    import pandas
-
-    libelles = pandas.read_csv(RACINE / "libelles-origine.csv", dtype=str).set_index("code_qua")
-    manquants = set(quartiers["code_qua"]) - set(libelles.index)
+    manquants = sorted(set(quartiers["code_qua"]) - set(noms))
     if manquants:
         raise SystemExit(
-            f"Aucun libellé d'origine pour {sorted(manquants)} : le découpage IRIS a "
-            "changé, il faut reprendre libelles-origine.csv avant de publier."
+            f"Aucun nom officiel pour {manquants} : le tableau Wikipédia ne couvre pas "
+            "tous les quartiers (tableau modifié, ou millésime IRIS différent)."
         )
-    quartiers = quartiers.copy()
-    quartiers["NOM_QUA"] = [libelles.loc[c, "NOM_QUA"] for c in quartiers["code_qua"]]
-    quartiers["NOM_CO"] = [libelles.loc[c, "NOM_CO"] for c in quartiers["code_qua"]]
-    return quartiers
-
-
-# --------------------------------------------------------------------------
-# Enrichissement
-# --------------------------------------------------------------------------
-def enrichir(quartiers, officiels: dict[str, list[str]]) -> list[dict]:
-    """Attribue le nom officiel à chaque quartier et renvoie la table de relecture."""
-    table = []
-    for ligne in quartiers.itertuples():
-        arrondissement = ligne.DEPCO
-        numero = ligne.num_qua
-        prefixe = ligne.prefixe
-        nom_source = ligne.NOM_QUA
-
-        liste = officiels.get(arrondissement, [])
-        nom_officiel = liste[numero - 1] if numero <= len(liste) else None
-        concordant = bool(nom_officiel) and cle_comparaison(nom_officiel) == cle_comparaison(nom_source)
-        corrige = not concordant and correction_applicable(prefixe, nom_source, nom_officiel)
-        # Le nom officiel s'applique quand les deux libellés se correspondent, ou
-        # quand la divergence figure dans CORRECTIONS. Sinon on garde le libellé
-        # source : une divergence inconnue est un signal, pas une correction.
-        nom = nom_officiel if (concordant or corrige) else nom_source.title()
-
-        table.append({
-            "prefixe": prefixe,
+    return [
+        {
+            "prefixe": ligne.prefixe,
             "code_qua": ligne.code_qua,
-            "arrondissement": arrondissement,
-            "num_qua": numero,
-            "nom": nom,
-            "nom_source": nom_source,
-            "correction": "OUI" if corrige else "",
-            "alerte": "" if (concordant or corrige) else "DIVERGENCE NON EXAMINÉE",
-        })
-    return table
+            "arrondissement": ligne.DEPCO,
+            "num_qua": ligne.num_qua,
+            "nom": noms[ligne.code_qua],
+        }
+        for ligne in quartiers.itertuples()
+    ]
 
 
 # --------------------------------------------------------------------------
@@ -360,7 +289,6 @@ def verifier_prefixes(couche, table: list[dict]) -> int:
 
     print("\n▸ Vérification géométrique contre l'export cadastre Etalab")
     quartiers = list(couche.geometry)
-    proprietes = table
     index = STRtree(quartiers)
 
     recouvrements, ecarts = [], []
@@ -378,12 +306,12 @@ def verifier_prefixes(couche, table: list[dict]) -> int:
                     meilleur, aire = int(candidat), intersection
             part = aire / polygone.area if polygone.area else 0.0
             attendu = next(
-                (i for i, p in enumerate(proprietes)
+                (i for i, p in enumerate(table)
                  if p["prefixe"] == prefixe and p["arrondissement"] == commune), None
             )
             if meilleur is None or meilleur != attendu:
                 ecarts.append((commune, prefixe, part,
-                               proprietes[meilleur]["nom"] if meilleur is not None else "—"))
+                               table[meilleur]["nom"] if meilleur is not None else "—"))
             else:
                 recouvrements.append(part)
 
@@ -406,7 +334,7 @@ def exporter_shapefile(couche, base) -> None:
     """Shapefile UTF-8, livré en dossier ET en archive zip.
 
     Le format impose des contraintes que les autres n'ont pas :
-      - noms de champs limités à 10 caractères. Les sept colonnes tiennent
+      - noms de champs limités à 10 caractères. Les six colonnes tiennent
         (`code_qua` est la plus longue, 8) : aucune troncature, donc des noms
         identiques d'un format à l'autre. Une colonne plus longue ajoutée un
         jour serait silencieusement tronquée — d'où le contrôle ci-dessous.
@@ -442,7 +370,7 @@ def exporter(couche, table: list[dict]) -> None:
 
     couche = couche.assign(nom=[ligne["nom"] for ligne in table])
     # Ordre de colonnes stable : identifiants, puis libellés, puis géométrie.
-    colonnes = ["prefixe", "code_qua", "num_qua", "nom", "DEPCO", "NOM_CO", "NOM_QUA"]
+    colonnes = ["prefixe", "code_qua", "num_qua", "nom", "DEPCO", "NOM_CO"]
     couche = couche[colonnes + ["geometry"]]
 
     couche.to_file(f"{base}.geojson", driver="GeoJSON")
@@ -458,6 +386,7 @@ def exporter(couche, table: list[dict]) -> None:
     # incohérence qu'on évite plutôt que de la publier.
     couche.to_parquet(f"{base}.parquet", compression="zstd")
 
+    # Table de relecture sans géométrie (pratique pour un diff, un tri, un import).
     with open(f"{base}.csv", "w", encoding="utf-8", newline="") as fichier:
         redacteur = csv.DictWriter(fichier, fieldnames=list(table[0]))
         redacteur.writeheader()
@@ -471,7 +400,7 @@ def exporter(couche, table: list[dict]) -> None:
 
 def main() -> int:
     analyseur = argparse.ArgumentParser(
-        description="Enrichit le jeu « Quartiers de Marseille » (identifiants + noms officiels).",
+        description="Construit le jeu « Quartiers de Marseille » (IRIS + Wikipédia + cadastre).",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     analyseur.add_argument(
@@ -483,23 +412,9 @@ def main() -> int:
     print("▸ Reconstruction des quartiers depuis les IRIS")
     quartiers = agreger_iris()
 
-    print("\n▸ Libellés d'origine")
-    quartiers = rattacher_libelles_origine(quartiers)
-    print(f"  {len(quartiers)}/{NB_QUARTIERS} repris depuis libelles-origine.csv")
-    officiels = noms_officiels()
-
-    print("\n▸ Noms officiels")
-    table = enrichir(quartiers, officiels)
-    corrections = [ligne for ligne in table if ligne["correction"]]
-    alertes = [ligne for ligne in table if ligne["alerte"]]
-    print(f"  {len(table)} quartiers · {len(table) - len(corrections)} noms appariés · "
-          f"{len(corrections)} corrigés")
-    for ligne in corrections:
-        print(f"    {ligne['prefixe']} ({ligne['code_qua']}) : "
-              f"« {ligne['nom_source']} » → « {ligne['nom']} »")
-    for ligne in alertes:
-        print(f"  ⚠ préfixe {ligne['prefixe']} ({ligne['code_qua']}) : « {ligne['nom_source']} » "
-              f"diverge du nom officiel sans figurer dans CORRECTIONS — libellé source conservé.")
+    print("\n▸ Noms officiels (Wikipédia, joints par code)")
+    table = nommer(quartiers, noms_officiels())
+    print(f"  {len(table)}/{NB_QUARTIERS} quartiers nommés")
 
     ecarts = verifier_prefixes(quartiers, table) if arguments.verifier else 0
 
